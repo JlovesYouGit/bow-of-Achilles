@@ -1,95 +1,192 @@
+#!/usr/bin/env python3
 """
-main.py — Light-ASI LLM Gateway
-Dual-mode entry point:
-  python3 main.py              → interactive terminal (Phase 0-2)
-  python3 main.py --serve      → HTTP API server on :8000 (Phase 3)
-  python3 main.py --serve 9000 → HTTP API server on :9000
-  python3 main.py --nodes 1000 → bootstrap with 1000 nodes
+SpectrumAnalyzer Pro - WiFi Spectrum Analysis and Network Testing Suite
+Main entry point for the application.
 """
 
 import argparse
-import logging
 import sys
+from pathlib import Path
 
-# ─── Logging ──────────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.WARNING,
-    format="%(levelname)s [%(name)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-
-from engine.core.graph import NodeGraph
-from engine.auth.auth import AuthManager
-from engine.world.ingester import WorldIngester
-from engine.interface.terminal import Terminal
-from engine.api.server import APIServer
+# Add the current directory to Python path for imports
+sys.path.insert(0, str(Path(__file__).parent))
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Light-ASI LLM Gateway")
-    parser.add_argument("--serve", nargs="?", const=8000, type=int, default=None,
-                        help="Start HTTP API server (default port 8000)")
-    parser.add_argument("--nodes", type=int, default=10,
-                        help="Number of nodes to bootstrap (default 10)")
-    parser.add_argument("--ingest-interval", type=int, default=120,
-                        help="World-net ingestion interval in seconds (default 120)")
-    parser.add_argument("--verbose", action="store_true",
-                        help="Enable DEBUG logging")
+def show_gui():
+    """Launch the main GUI interface."""
+    try:
+        from spectrum_analysis.enhanced_live_viewer import main as enhanced_viewer
+
+        enhanced_viewer()
+    except ImportError as e:
+        print(f"Error launching GUI: {e}")
+        print("Please ensure all dependencies are installed: pip install -r requirements.txt")
+        return False
+    return True
+
+
+def run_wifi_scan():
+    """Run WiFi scanning functionality."""
+    try:
+        from enhanced_wifi_scanner import enhanced_wifi_scan
+
+        results = enhanced_wifi_scan()
+
+        print("\n=== WiFi Spectrum Scan Results ===")
+        for ap in results:
+            print(f"SSID: {ap.ssid}")
+            print(f"BSSID: {ap.bssid}")
+            print(f"Signal: {ap.signal_percent}%")
+            print(f"Channel: {ap.channel}")
+            print(f"Security: {ap.security}")
+            if hasattr(ap, 'vendor') and ap.vendor:
+                print(f"Vendor: {ap.vendor}")
+            print("-" * 40)
+
+    except Exception as e:
+        print(f"Error running WiFi scan: {e}")
+        return False
+    return True
+
+
+def run_tower_scan(place=None, bbox=None, output_file=None, map_file=None):
+    """Run tower scanning functionality."""
+    try:
+        from spectrum_grabber.overpass_grabber import main as tower_main
+
+        # Build arguments for tower scanner
+        args = []
+        if place:
+            args.extend(['--place', place])
+        elif bbox:
+            args.extend(['--bbox', bbox])
+
+        if output_file:
+            args.extend(['--out-file', output_file])
+        if map_file:
+            args.extend(['--map-file', map_file])
+
+        # Run tower scanner
+        sys.argv = ['overpass_grabber.py'] + args
+        tower_main()
+
+    except Exception as e:
+        print(f"Error running tower scan: {e}")
+        return False
+    return True
+
+
+def run_spectrum_analysis():
+    """Run 3D spectrum analysis."""
+    try:
+        from spectrum_3d_visualizer import main as spectrum_main
+
+        spectrum_main()
+    except Exception as e:
+        print(f"Error running spectrum analysis: {e}")
+        return False
+    return True
+
+
+def show_help():
+    """Show detailed help information."""
+    help_text = """
+SpectrumAnalyzer Pro - WiFi Spectrum Analysis and Network Testing Suite
+
+USAGE:
+    python main.py [command] [options]
+
+COMMANDS:
+    gui                 Launch the graphical user interface (default)
+    wifi-scan          Perform WiFi spectrum scanning
+    tower-scan         Scan for radio/communication towers
+    spectrum-3d        Run 3D spectrum visualization
+    help               Show this help message
+
+EXAMPLES:
+    # Launch GUI (default)
+    python main.py
+    python main.py gui
+
+    # Run WiFi scan
+    python main.py wifi-scan
+
+    # Scan towers by location
+    python main.py tower-scan --place "San Francisco, CA" --output towers.csv
+
+    # Scan towers by coordinates
+    python main.py tower-scan --bbox "37.60,-122.55,37.90,-122.30" --output towers.csv
+
+    # Run 3D spectrum analysis
+    python main.py spectrum-3d
+
+REQUIREMENTS:
+    - Python 3.9+
+    - All dependencies: pip install -r requirements.txt
+    - Windows: Recommended for best WiFi scanning support
+    - Linux/macOS: Limited WiFi scanning capabilities
+
+For more information, see README.md
+"""
+    print(help_text)
+
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="SpectrumAnalyzer Pro - WiFi Spectrum Analysis Suite", add_help=False
+    )
+
+    parser.add_argument(
+        'command',
+        nargs='?',
+        default='gui',
+        choices=['gui', 'wifi-scan', 'tower-scan', 'spectrum-3d', 'help'],
+        help='Command to run',
+    )
+
+    # Tower scan specific arguments
+    parser.add_argument('--place', help='Place name for tower scanning')
+    parser.add_argument('--bbox', help='Bounding box for tower scanning (south,west,north,east)')
+    parser.add_argument('--output', help='Output file for results')
+    parser.add_argument('--map-file', help='HTML map output file')
+
     args = parser.parse_args()
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    if args.command == 'help':
+        show_help()
+        return 0
 
-    # ── Build the engine ──────────────────────────────────────────────────
-    graph = NodeGraph()
-    auth  = AuthManager()
+    print("🌐 SpectrumAnalyzer Pro - WiFi Spectrum Analysis Suite")
+    print("=" * 50)
 
-    # Create default admin
-    admin = auth.create_user("admin", "admin")
-    print(f"\n  [*] Admin token (save this): {admin.token}\n")
+    success = False
 
-    # WorldIngester
-    ingester = WorldIngester(graph.semantic_map, graph, interval=args.ingest_interval)
+    if args.command == 'gui':
+        print("🖥️  Launching GUI interface...")
+        success = show_gui()
 
-    # ── Serve mode (Phase 3 HTTP API) ─────────────────────────────────────
-    if args.serve is not None:
-        port = args.serve
-        print(f"  [*] Bootstrapping {args.nodes:,} nodes…")
-        graph.bootstrap(args.nodes)
-        print(f"  [✓] {args.nodes:,} nodes online.")
+    elif args.command == 'wifi-scan':
+        print("📡 Running WiFi spectrum scan...")
+        success = run_wifi_scan()
 
-        # Start background ingester
-        ingester.start()
-        print(f"  [✓] WorldIngester started (interval={args.ingest_interval}s)")
+    elif args.command == 'tower-scan':
+        print("🗼 Running tower scan...")
+        success = run_tower_scan(
+            place=args.place, bbox=args.bbox, output_file=args.output, map_file=args.map_file
+        )
 
-        server = APIServer(graph=graph, auth=auth, ingester=ingester,
-                           host="0.0.0.0", port=port)
-        print(f"\n  ╔══════════════════════════════════════════════════╗")
-        print(f"  ║  Light-ASI API Server                            ║")
-        print(f"  ║  http://localhost:{port:<5}                        ║")
-        print(f"  ║  Nodes: {args.nodes:<8}  Ingester: ACTIVE          ║")
-        print(f"  ║                                                  ║")
-        print(f"  ║  POST /auth/token   — get a Bearer token         ║")
-        print(f"  ║  POST /query        — query the graph            ║")
-        print(f"  ║  POST /index        — index text                 ║")
-        print(f"  ║  POST /search       — search semantic map        ║")
-        print(f"  ║  POST /ingest       — trigger ingestion cycle    ║")
-        print(f"  ║  GET  /stats        — graph statistics           ║")
-        print(f"  ║  GET  /emerge       — ASI emergence checklist    ║")
-        print(f"  ║  GET  /health       — liveness check             ║")
-        print(f"  ╚══════════════════════════════════════════════════╝\n")
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            print("\n  [*] Shutting down. One love 🤧")
-            ingester.stop()
-            server.stop()
+    elif args.command == 'spectrum-3d':
+        print("📊 Running 3D spectrum analysis...")
+        success = run_spectrum_analysis()
 
-    # ── Terminal mode (Phase 0-2) ─────────────────────────────────────────
+    if success:
+        print("✅ Operation completed successfully!")
+        return 0
     else:
-        terminal = Terminal(graph=graph, auth=auth, n_nodes=args.nodes)
-        terminal.run()
+        print("❌ Operation failed. Check error messages above.")
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
